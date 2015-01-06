@@ -7,7 +7,7 @@ Required Java libraries: Apache Commons Lang, MySQL Connector/J.
 
 Widget package structure: (.zip file)
 
-+---classes
+```+---classes
 |   +---edu
 |       +---mtu
 |           +---wmtu
@@ -19,6 +19,7 @@ Widget package structure: (.zip file)
 |   /---commons-lang3-3.3.2.jar
 |   /---mysql-connector-java-5.1.34-bin.jar
 /---plugin.xml
+```
 
 ===
 #### LoggingWidget.java
