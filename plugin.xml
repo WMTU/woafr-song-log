@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE manifest PUBLIC "gra-plugin-manifest-1.0.dtd" "">
+
+<manifest version="1.0">
+
+<plugin type="AppWidget" entryPoint="edu.mtu.wmtu.LoggingWidget">
+    <id>loggingWidget</id>
+    <version>1.0</version>
+    <name>Logging Widget</name>
+    <description>Allows show hosts to log played songs to a DB</description>
+    <icon>examplewidget.png</icon>
+</plugin>
+
+</manifest>
