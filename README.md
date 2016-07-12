@@ -17,8 +17,7 @@ Widget package structure: (.zip file)
 |               +---resources
 |               |   \---Logging.png
 |               |   \---messages.properties
-|               \---LoggingWidget.class
-|               \---LoggingWidget$1.class
+|               \---LoggingWidget.class (make sure to also include all subclass files here)
 +---lib
 |   /---commons-lang3-3.3.2.jar
 |   /---mysql-connector-java-5.1.34-bin.jar
