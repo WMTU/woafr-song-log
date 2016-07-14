@@ -1,6 +1,4 @@
 # WMTU DJ Logs Widget Properties
-dbHostname=<DatabaseHostname>
-dbName=<DatabaseName>
-dbTable=<DatabaseTable>
-dbUser=<DatabaseUser>
-dbPassword=<DatabasePassword>
+log_endpoint=http://<hostname>/log/api/v1.0/songs
+log_username=<username for Log app>
+log_password=<password for Log app>

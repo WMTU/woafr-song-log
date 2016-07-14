@@ -5,9 +5,9 @@
 
 <plugin type="AppWidget" entryPoint="edu.mtu.wmtu.LoggingWidget">
     <id>loggingWidget</id>
-    <version>1.1</version>
+    <version>2.0</version>
     <name>Logging Widget</name>
-    <description>Allows show hosts to log played songs to a DB</description>
+    <description>Allows show hosts to log played songs to the Log app</description>
     <icon>logging.png</icon>
 </plugin>
 

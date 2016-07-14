@@ -12,20 +12,14 @@ import java.awt.event.KeyListener;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
-import java.util.Timer;
-import java.util.TimerTask;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -75,15 +69,9 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
   private static final Insets WEST_INSETS = new Insets( 5, 10, 5, 10 );
   private static final Insets EAST_INSETS = new Insets( 5, 10, 5, 10 );
 
-  private String dbHostname;
-  private String dbName;
-  private String dbTable;
-  private String dbUser;
-  private String dbPassword;
-
-  private String tuneInPartnerId;
-  private String tuneInPartnerKey;
-  private String tuneInStationId;
+  private String log_endpoint;
+  private String log_username;
+  private String log_password;
 
   private JLabel messageLabel;
   private JButton dropMeta;
@@ -106,21 +94,21 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
   public LoggingWidget() throws FileNotFoundException, IOException {
     super( "Logging", R.getImage( "logging.png" ) );
 
+    // Load config file
     InputStream input = getClass().getClassLoader().getResourceAsStream( "config.properties" );
     if ( input == null )
       throw new FileNotFoundException( "Widget configuration file not found in the classpath" );
+
+    // Load properties into new config object
     Properties config = new Properties();
     config.load( input );
-    dbHostname = config.getProperty( "dbHostname" );
-    dbName = config.getProperty( "dbName" );
-    dbTable = config.getProperty( "dbTable" );
-    dbUser = config.getProperty( "dbUser" );
-    dbPassword = config.getProperty( "dbPassword" );
-    tuneInPartnerId = config.getProperty( "tuneInPartnerId" );
-    tuneInPartnerKey = config.getProperty( "tuneInPartnerKey" );
-    tuneInStationId = config.getProperty( "tuneInStationId" );
+    log_endpoint = config.getProperty( "log_endpoint" );
+    log_username = config.getProperty( "log_username" );
+    log_password = config.getProperty( "log_password" );
     input.close();
 
+    // Get the SelectionService and add listeners for selecting playlist entries
+    // and media assets
     selectionService = Platform.getService( SelectionService.class );
     selectionService.addSelectionListener( new SelectionAdapter() {
       @Override
@@ -134,6 +122,8 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
       }
     } );
 
+    // Get the SchedulerService and add a listener for the 'now playing' entry
+    // on the Stack widget changing
     schedulerService = Platform.getService( SchedulerService.class );
     schedulerService.addListener( new SchedulerAdapter() {
       @Override
@@ -142,9 +132,14 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
       }
     } );
 
+    // Get the LibraryService for uhh, future use
     libraryService = Platform.getService( LibraryService.class );
   }
 
+  /**
+   * Set up the layout and style of the widget, and add event listeners for
+   * clicking on the buttons and pressing the enter key
+   */
   @Override
   protected JComponent buildContentPanel() {
     getToolbar().setTitle( "WMTU DJ Logs" );
@@ -291,6 +286,16 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     return panel;
   }
 
+  /**
+   * Helper method for building GridBadConstraints given an object's position on
+   * the grid
+   * 
+   * @param x
+   *          x-coordinate of the object in the grid (increasing left to right)
+   * @param y
+   *          y-coordinate of the object in the grid (increasing top to bottom)
+   * @return a GridBagConstraints object with default layout values
+   */
   private GridBagConstraints createGbc( int x, int y ) {
     GridBagConstraints gbc = new GridBagConstraints();
     gbc.gridx = x;
@@ -310,6 +315,9 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     return gbc;
   }
 
+  /**
+   * Attaches button press actions to methods
+   */
   @Override
   public void actionPerformed( ActionEvent event ) {
     if ( event.getActionCommand().equals( "submit" ) ) {
@@ -324,6 +332,10 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
+  /**
+   * Validates and sanitizes log form input, then sends it to the Log app for
+   * entry into the database and broadcast to services
+   */
   private void parseLog() {
     if ( songTitle.getText().trim().equals( "" ) ) {
       messageLabel.setText( "Error: 'Song Name' cannot be blank" );
@@ -342,25 +354,7 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     final String album = WordUtils.capitalizeFully( songAlbum.getText().replaceAll( regex, "" ) );
     String genre = songGenre.getEditor().getItem().toString().replaceAll( regex, "" );
 
-    String truncArtist;
-    if ( artist.length() > 4 && artist.substring( 0, 4 ).equals( "The " ) ) {
-      truncArtist = artist.substring( 4 );
-    } else {
-      truncArtist = artist;
-    }
-
-    boolean success = insertLog( song, artist, album, (String) location.getSelectedItem(), genre, truncArtist, "" );
-
-    new Timer().schedule( new TimerTask() {
-      @Override
-      public void run() {
-        boolean success = tuneInLog( song, artist, album );
-        if ( !success ) {
-          messageLabel.setText( "Error: " + errorMessage );
-          messageLabel.setForeground( Color.RED );
-        }
-      }
-    }, 30000 );
+    boolean success = sendLog( song, artist, album, (String) location.getSelectedItem(), genre, "" );
 
     if ( success ) {
       Date rightNow = new Date();
@@ -377,6 +371,9 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
+  /**
+   * Clears the log form input fields and resets menus to default values
+   */
   private void clearLog() {
     location.setSelectedIndex( 2 );
     songTitle.setText( "" );
@@ -386,6 +383,10 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     songGenre.getEditor().setItem( "" );
   }
 
+  /**
+   * Fills the input form based on the fields in MediaAsset asset corresponding
+   * to a playlist entry whose searh populates the results of this AsyncCallback
+   */
   private AsyncCallback<MediaAsset, LibraryError> assetFromEntryFillMeta = new AsyncCallback<MediaAsset, LibraryError>() {
     public void onSuccess( MediaAsset asset ) {
       location.setSelectedIndex( 0 );
@@ -401,6 +402,11 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   };
 
+  /**
+   * Fills the input form based on the fields in MediaAsset selectedAsset, or
+   * initiates a search for a media asset matching the ID of PlaylistEntry
+   * selectedEntry
+   */
   private void fillMeta() {
     if ( selectedAsset != null ) {
       location.setSelectedIndex( 0 );
@@ -413,6 +419,10 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
+  /**
+   * Toggles input field enable/disable based on whether or not automatic
+   * logging has been triggered
+   */
   private void toggleAutomation() {
     if ( toggleAutomation.isSelected() ) {
       toggleAutomation.setText( "Log Manually" );
@@ -435,29 +445,68 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
-  private boolean insertLog( String song, String artist, String album, String location, String genre,
-      String truncArtist, String cdNumber ) {
-    String dbUrl = "jdbc:mysql://" + dbHostname + ":3306/" + dbName + "?useUnicode=true&characterEncoding=utf-8";
-    String dbQuery = "INSERT INTO " + dbTable + " (ts, song_name, artist, album, location, genre, truncated_artist, "
-        + "cd_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-
+  /**
+   * Given song parameters, submit a record to the Log app
+   * 
+   * @param song
+   *          Song title
+   * @param artist
+   *          Artist or Band name
+   * @param album
+   *          Album title
+   * @param location
+   *          Location of recording in media library
+   * @param genre
+   *          Genre
+   * @param cdNumber
+   *          ID of recording in media library
+   * @return true on probable success, false on failure
+   */
+  private boolean sendLog( String song, String artist, String album, String location, String genre, String cdNumber ) {
     try {
-      Class.forName( "com.mysql.jdbc.Driver" ).newInstance();
-      Connection conn = DriverManager.getConnection( dbUrl, dbUser, dbPassword );
+      URL url = new URL( log_endpoint );
 
-      PreparedStatement statement = conn.prepareStatement( dbQuery );
-      statement.setTimestamp( 1, new Timestamp( new Date().getTime() ) );
-      statement.setString( 2, song );
-      statement.setString( 3, artist );
-      statement.setString( 4, album );
-      statement.setString( 5, location );
-      statement.setString( 6, genre );
-      statement.setString( 7, truncArtist );
-      statement.setString( 8, cdNumber );
+      // Build map of request parameters
+      Map<String, Object> params = new LinkedHashMap<String, Object>();
+      params.put( "location", location );
+      params.put( "asset_id", cdNumber );
+      params.put( "title", song );
+      params.put( "artist", artist );
+      params.put( "album", album );
+      params.put( "genre", genre );
 
-      statement.execute();
+      // Form request body from parameter map
+      StringBuilder postData = new StringBuilder();
+      postData.append( '{' );
+      for ( Map.Entry<String, Object> param : params.entrySet() ) {
+        if ( postData.length() != 1 )
+          postData.append( ',' );
+        postData.append( '"' );
+        postData.append( param.getKey() );
+        postData.append( '"' );
+        postData.append( ':' );
+        postData.append( '"' );
+        postData.append( String.valueOf( param.getValue() ) );
+        postData.append( '"' );
+      }
+      postData.append( '}' );
+      byte[] postDataBytes = postData.toString().getBytes( "UTF-8" );
 
-      conn.close();
+      // Initiate POST request to Log app
+      HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestMethod( "POST" );
+      conn.setRequestProperty( "Content-Type", "application/json" );
+      conn.setRequestProperty( "Content-Length", String.valueOf( postDataBytes.length ) );
+      conn.setDoOutput( true );
+      conn.getOutputStream().write( postDataBytes );
+
+      // Handle response from Log app
+      int status = conn.getResponseCode();
+      String message = conn.getResponseMessage();
+      if ( status != 200 && status != 201 && status != 202 ) {
+        errorMessage = String.format( "Log: HTTP %d: %s", status, message );
+        return false;
+      }
     } catch ( Exception e ) {
       errorMessage = ExceptionUtils.getStackTrace( e );
       e.printStackTrace();
@@ -467,48 +516,11 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     return true;
   }
 
-  private boolean tuneInLog( String song, String artist, String album ) {
-    String url = "http://air.radiotime.com/Playing.ashx";
-    String charset = java.nio.charset.StandardCharsets.UTF_8.name();
-    String query;
-
-    try {
-      query = String.format( "partnerId=%s&partnerKey=%s&id=%s&title=%s&artist=%s",
-          URLEncoder.encode( tuneInPartnerId, charset ), URLEncoder.encode( tuneInPartnerKey, charset ),
-          URLEncoder.encode( tuneInStationId, charset ), URLEncoder.encode( song, charset ),
-          URLEncoder.encode( artist, charset ) );
-
-      if ( !album.trim().isEmpty() )
-        query += String.format( "&album=%s", URLEncoder.encode( album, charset ) );
-    } catch ( UnsupportedEncodingException e ) {
-      errorMessage = ExceptionUtils.getStackTrace( e );
-      e.printStackTrace();
-      return false;
-    }
-
-    try {
-      HttpURLConnection connection = (HttpURLConnection) new URL( url + "?" + query ).openConnection();
-      connection.setRequestProperty( "Accept-Charset", charset );
-      connection.getInputStream();
-      int status = connection.getResponseCode();
-      String message = connection.getResponseMessage();
-      if ( status != 200 ) {
-        errorMessage = String.format( "TuneIn: HTTP %d: %s", status, message );
-        return false;
-      }
-    } catch ( MalformedURLException e ) {
-      errorMessage = ExceptionUtils.getStackTrace( e );
-      e.printStackTrace();
-      return false;
-    } catch ( IOException e ) {
-      errorMessage = ExceptionUtils.getStackTrace( e );
-      e.printStackTrace();
-      return false;
-    }
-
-    return true;
-  }
-
+  /**
+   * Set or clear the selected PlaylistEntry
+   * 
+   * @param selection
+   */
   private void setSelectedEntry( Selection<PlaylistEntry> selection ) {
     if ( selection != null ) {
       selectedEntry = selection.getFirstItem();
@@ -519,6 +531,11 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
+  /**
+   * Set or clear the selected MediaAsset
+   * 
+   * @param selection
+   */
   private void setSelectedAsset( Selection<MediaAssetInfo> selection ) {
     if ( selection != null ) {
       selectedAsset = selection.getFirstItem();
@@ -529,31 +546,19 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   }
 
+  /**
+   * Submit a record to the Log app based on the fields in MediaAsset asset
+   * corresponding to a playlist entry whose searh populates the results of this
+   * AsyncCallback
+   */
   private AsyncCallback<MediaAsset, LibraryError> assetFromEntryCheckChangedEntry = new AsyncCallback<MediaAsset, LibraryError>() {
     public void onSuccess( MediaAsset asset ) {
       // Enter log from automation
-      final String song = WordUtils.capitalizeFully( asset.getTitle().trim() );
-      final String artist = WordUtils.capitalizeFully( asset.getArtist().trim() );
-      final String album = WordUtils.capitalizeFully( asset.getNote().trim() );
-      String truncArtist;
-      if ( artist.length() > 4 && artist.substring( 0, 4 ).equals( "The " ) ) {
-        truncArtist = artist.substring( 4 );
-      } else {
-        truncArtist = artist;
-      }
+      final String song = asset.getTitle().trim();
+      final String artist = asset.getArtist().trim();
+      final String album = asset.getNote().trim();
 
-      boolean success = insertLog( song, artist, album, "Main Bin", "", truncArtist, asset.getId().value() );
-
-      new Timer().schedule( new TimerTask() {
-        @Override
-        public void run() {
-          boolean success = tuneInLog( song, artist, album );
-          if ( !success ) {
-            messageLabel.setText( "Error: " + errorMessage );
-            messageLabel.setForeground( Color.RED );
-          }
-        }
-      }, 30000 );
+      boolean success = sendLog( song, artist, album, "Main Bin", "", asset.getId().value() );
 
       if ( success ) {
         Date rightNow = new Date();
@@ -573,6 +578,12 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     }
   };
 
+  /**
+   * When a new entry begins playing on the Stack widget, check a number of
+   * criteria to determine if it is appropriate to automatically log the entry
+   * to the Log app. If so, initiate a search for the media asset matching the
+   * ID of PlaylistEntry selectedEntry
+   */
   private void checkChangedEntry() {
     // Check if logging from automation is enabled
     if ( !toggleAutomation.isSelected() )

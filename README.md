@@ -1,11 +1,11 @@
 woafr-song-log
 ==============
 
-Current version: 1.1
+Current version: 2.0
 
-Java widget for logging songs to WMTU db from WO Automation for Radio
+Java widget for logging songs to [Log](https://github.com/WMTU/Log) app from WO Automation for Radio
 
-Required Java libraries: Apache Commons Lang 3.3.2, MySQL Connector/J 5.1.34, Log4J 1.2.16.
+Required Java libraries: Apache Commons Lang 3.3.2, Log4J 1.2.16.
 
 Widget package structure: (.zip file)
 
@@ -17,10 +17,9 @@ Widget package structure: (.zip file)
 |               +---resources
 |               |   \---Logging.png
 |               |   \---messages.properties
-|               \---LoggingWidget.class (make sure to also include all subclass files here)
+|               \---LoggingWidget.class (make sure to include all subclass files here too)
 +---lib
 |   /---commons-lang3-3.3.2.jar
-|   /---mysql-connector-java-5.1.34-bin.jar
 |   /---log4j-1.2.16.jar
 +---resources
 |   /---config.properties
