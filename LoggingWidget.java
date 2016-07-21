@@ -14,12 +14,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -58,6 +59,11 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
   private static final Resources R = new PackageResources( LoggingWidget.class );
   private static final Logger log = Logger.getLogger( LoggingWidget.class );
 
+  private String log_endpoint;
+  private String log_username;
+  private String log_password;
+  private Set<String> log_excluded_wo_categories;
+
   private SelectionService selectionService;
   private PlaylistEntry selectedEntry;
   private MediaAssetInfo selectedAsset;
@@ -66,12 +72,10 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
 
   private LibraryService libraryService;
 
+  private Set<String> doNotCapitalize;
+
   private static final Insets WEST_INSETS = new Insets( 5, 10, 5, 10 );
   private static final Insets EAST_INSETS = new Insets( 5, 10, 5, 10 );
-
-  private String log_endpoint;
-  private String log_username;
-  private String log_password;
 
   private JLabel messageLabel;
   private JButton dropMeta;
@@ -105,6 +109,10 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     log_endpoint = config.getProperty( "log_endpoint" );
     log_username = config.getProperty( "log_username" );
     log_password = config.getProperty( "log_password" );
+    log_excluded_wo_categories = new HashSet<String>();
+    for ( String cat : config.getProperty( "log_excluded_wo_categories" ).split( "," ) ) {
+      log_excluded_wo_categories.add( cat );
+    }
     input.close();
 
     // Get the SelectionService and add listeners for selecting playlist entries
@@ -134,6 +142,26 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
 
     // Get the LibraryService for uhh, future use
     libraryService = Platform.getService( LibraryService.class );
+
+    // Initialize the set of words which are not to be capitalized in titles,
+    // according to the U.S. Government Printing Office Style Manual
+    doNotCapitalize = new HashSet<String>();
+    doNotCapitalize.add( "a" );
+    doNotCapitalize.add( "an" );
+    doNotCapitalize.add( "and" );
+    doNotCapitalize.add( "as" );
+    doNotCapitalize.add( "at" );
+    doNotCapitalize.add( "but" );
+    doNotCapitalize.add( "by" );
+    doNotCapitalize.add( "for" );
+    doNotCapitalize.add( "in" );
+    doNotCapitalize.add( "nor" );
+    doNotCapitalize.add( "of" );
+    doNotCapitalize.add( "or" );
+    doNotCapitalize.add( "on" );
+    doNotCapitalize.add( "the" );
+    doNotCapitalize.add( "to" );
+    doNotCapitalize.add( "up" );
   }
 
   /**
@@ -333,8 +361,37 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
   }
 
   /**
-   * Validates and sanitizes log form input, then sends it to the Log app for
-   * entry into the database and broadcast to services
+   * Capitalizes all of the words in the String input except those present in
+   * the Set doNotCapitalize
+   * 
+   * @param input
+   *          The String to covert to title case
+   * @return The input String converted to title case
+   */
+  private String titleCase( String input ) {
+    // Split the input String into component words and initialize a
+    // StringBuilder for the output
+    String[] words = input.split( " " );
+    StringBuilder builder = new StringBuilder();
+
+    // Loop over the words and capitalize them if they're not in the Set
+    // doNotCapitalize, and if they're the first or last word
+    for ( int i = 0; i < words.length; i += 1 ) {
+      String word = words[i];
+      String lower = word.toLowerCase();
+      if ( i != 0 && i != words.length - 1 && doNotCapitalize.contains( lower ) ) {
+        builder.append( lower ).append( " " );
+      } else {
+        builder.append( WordUtils.capitalize( word ) ).append( " " );
+      }
+    }
+
+    return builder.toString().trim();
+  }
+
+  /**
+   * Validates log form input, then sends it to the Log app for entry into the
+   * database and broadcast to services
    */
   private void parseLog() {
     if ( songTitle.getText().trim().equals( "" ) ) {
@@ -343,24 +400,23 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
       return;
     }
     if ( songArtist.getText().trim().equals( "" ) ) {
-      messageLabel.setText( "Error: 'Artist or Group' cannot be " + "blank" );
+      messageLabel.setText( "Error: 'Artist or Group' cannot be blank" );
       messageLabel.setForeground( Color.ORANGE );
       return;
     }
 
-    String regex = "(<([^>]+)>)";
-    final String song = WordUtils.capitalizeFully( songTitle.getText().replaceAll( regex, "" ) );
-    final String artist = WordUtils.capitalizeFully( songArtist.getText().replaceAll( regex, "" ) );
-    final String album = WordUtils.capitalizeFully( songAlbum.getText().replaceAll( regex, "" ) );
-    String genre = songGenre.getEditor().getItem().toString().replaceAll( regex, "" );
+    String song = titleCase( songTitle.getText().trim() );
+    String artist = titleCase( songArtist.getText().trim() );
+    String album = titleCase( songAlbum.getText().trim() );
+    String genre = titleCase( songGenre.getEditor().getItem().toString().trim() );
 
     boolean success = sendLog( song, artist, album, (String) location.getSelectedItem(), genre, "" );
 
     if ( success ) {
       Date rightNow = new Date();
       SimpleDateFormat dateFormat = new SimpleDateFormat( "h:mm a 'on' EEE',' MMM'.' d" );
-      messageLabel.setText(
-          "'" + song + "'" + " by " + artist + " was added to " + "the log at " + dateFormat.format( rightNow ) );
+      messageLabel
+          .setText( "'" + song + "'" + " by " + artist + " was added to the log at " + dateFormat.format( rightNow ) );
       messageLabel.setForeground( Color.GREEN );
 
       // Clear form fields
@@ -600,10 +656,16 @@ public class LoggingWidget extends BasicWidget implements ActionListener {
     if ( currentEntry.getStatus() != EntryStatus.PLAYING )
       return;
 
-    // If the current entry is a liner, underwriting, or station ID, return
+    // If the current entry is from any of the categories to be excluded, return
     String entryAssetId = currentEntry.getAssetId().value().toUpperCase();
-    if ( entryAssetId.contains( "LIN" ) || entryAssetId.contains( "COM" ) || entryAssetId.contains( "IDS" ) )
+    try {
+      if ( log_excluded_wo_categories.contains( entryAssetId.split( "/" )[1] ) )
+        return;
+    } catch ( ArrayIndexOutOfBoundsException e ) {
+      messageLabel.setText( "Error: asset ID is not in the format 'SS32/CAT/XXXX'" );
+      messageLabel.setForeground( Color.RED );
       return;
+    }
 
     // Get the media asset associated with the selected playlist entry and
     // finish processing the log
